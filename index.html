@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lyrica Studio</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@400;700&family=Roboto:wght@400;700&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;600;700&family=Bebas+Neue&family=Oswald:wght@400;600&family=Dancing+Script:wght@400;700&family=Pacifico&family=Cinzel:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <aside class="sidebar" id="sidebar">
+        <div class="brand">
+            <i class="fas fa-layer-group"></i> Lyrica<span> Studio</span>
+        </div>
+
+        <div class="scroll-content">
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="header-title"><i class="fas fa-folder-open"></i> 1. Assets</span>
+                    <i class="fas fa-chevron-up toggle-icon"></i>
+                </div>
+                <div class="panel-body">
+                    <div class="upload-zone">
+                        <label for="musicInput">
+                            <i class="fas fa-music"></i>
+                            <span>Audio Track</span>
+                            <small>.mp3 or .wav</small>
+                        </label>
+                        <input type="file" id="musicInput" accept="audio/*">
+                    </div>
+                    
+                    <div class="upload-zone">
+                        <label for="lrcInput">
+                            <i class="fas fa-file-alt"></i>
+                            <span>Lyrics File</span>
+                            <small>.lrc or .txt</small>
+                        </label>
+                        <input type="file" id="lrcInput" accept=".lrc,.txt">
+                    </div>
+
+                    <div class="upload-zone">
+                        <label for="imageInput">
+                            <i class="fas fa-image"></i>
+                            <span>Background</span>
+                            <small>1920x1080 rec.</small>
+                        </label>
+                        <input type="file" id="imageInput" accept="image/*">
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="header-title"><i class="fas fa-crop-alt"></i> 2. Format</span>
+                    <i class="fas fa-chevron-up toggle-icon"></i>
+                </div>
+                <div class="panel-body">
+                    <div class="control-row">
+                        <div class="input-group" style="width: 55%;flex: unset;">
+                            <label>Resolution</label>
+                            <select id="resolutionSelect">
+                                <option value="720p">720p (HD)</option>
+                                <option value="1080p" selected>1080p (FHD)</option>
+                                <option value="1440p">1440p (QHD)</option>
+                                <option value="2160p">4K (UHD)</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label>FPS</label>
+                            <select id="fpsSelect">
+                                <option value="24">24 FPS</option>
+                                <option value="30" selected>30 FPS</option>
+                                <option value="60">60 FPS</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label>Quality (Bitrate)</label>
+                        <select id="bitrateSelect">
+                            <option value="2500" selected>Standard (2.5 Mbps)</option>
+                            <option value="5000">High (5 Mbps)</option>
+                            <option value="8000">Ultra (8 Mbps)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="header-title"><i class="fas fa-palette"></i> 3. Visual Style</span>
+                    <i class="fas fa-chevron-up toggle-icon"></i>
+                </div>
+                <div class="panel-body">
+                    <div class="input-group">
+                        <label>Font Family</label>
+                        <select id="fontSelect" style="font-family: 'Montserrat', sans-serif;">
+    
+                            <!-- Modern / Clean -->
+                            <option value="'Montserrat', sans-serif" style="font-family: 'Montserrat', sans-serif;" selected>
+                                Montserrat (Modern)
+                            </option>
+                            <option value="'Poppins', sans-serif" style="font-family: 'Poppins', sans-serif;">
+                                Poppins (Soft Modern)
+                            </option>
+                            <option value="'Roboto', sans-serif" style="font-family: 'Roboto', sans-serif;">
+                                Roboto (Standard)
+                            </option>
+
+                            <!-- Bold / Rap Style -->
+                            <option value="'Bebas Neue', sans-serif" style="font-family: 'Bebas Neue', sans-serif;">
+                                Bebas Neue (Bold Impact)
+                            </option>
+                            <option value="'Oswald', sans-serif" style="font-family: 'Oswald', sans-serif;">
+                                Oswald (Condensed Bold)
+                            </option>
+
+                            <!-- Elegant / Cinematic -->
+                            <option value="'Playfair Display', serif" style="font-family: 'Playfair Display', serif;">
+                                Playfair Display (Elegant Serif)
+                            </option>
+                            <option value="'Cinzel', serif" style="font-family: 'Cinzel', serif;">
+                                Cinzel (Cinematic)
+                            </option>
+
+                            <!-- Handwritten / Emotional -->
+                            <option value="'Dancing Script', cursive" style="font-family: 'Dancing Script', cursive;">
+                                Dancing Script (Emotional)
+                            </option>
+                            <option value="'Pacifico', cursive" style="font-family: 'Pacifico', cursive;">
+                                Pacifico (Chill Vibes)
+                            </option>
+                    </select>
+                    </div>
+                    <div class="control-row">
+                        <div class="input-group">
+                            <label>Font Style</label>
+                            <select id="fontStyleSelect">
+                                <option value="normal">Normal</option>
+                                <option value="bold" selected>Bold</option>
+                                <option value="italic">Italic</option>
+                                <option value="bold italic">Bold Italic</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="control-row">
+                        <div class="input-group" style="width: 40%;flex: unset;">
+                            <label>Font Size (px)</label>
+                            <input type="number" id="fontSizeInput" value="60" min="10" max="200">
+                        </div>
+                         <div class="input-group">
+                            <label>Show next lyric</label>
+                            <select id="nextLineToggle">
+                                <option value="on" selected>On</option>
+                                <option value="off">Off</option>
+                            </select>
+                        </div>
+                    </div>
+
+                     <div class="control-row">
+                        <div class="input-group">
+                            <label>Text Color</label>
+                            <div class="color-picker-modern">
+                                <div class="color-swatches">
+                                    <div class="swatch" data-color="#ffffff" style="background: #ffffff;"></div>
+                                    <div class="swatch" data-color="#ff4081" style="background: #ff4081;"></div>
+                                    <div class="swatch" data-color="#00e676" style="background: #00e676;"></div>
+                                    <div class="swatch" data-color="#00b0ff" style="background: #00b0ff;"></div>
+                                    <div class="swatch" data-color="#ffd600" style="background: #ffd600;"></div>
+                                    <div class="color-wrapper custom-color-swatch">
+                                        <input type="color" id="colorInput" value="#ffffff" title="Custom color">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="input-group">
+                        <label>Transition Effect</label>
+                        <div class="effect-grid" id="effectGrid">
+                                <div class="effect-box active" data-value="">None</div>
+                                <div class="effect-box" data-value="fade">Fade</div>
+                                <div class="effect-box" data-value="slideUp">Slide Up</div>
+                                <div class="effect-box" data-value="zoomIn">Zoom In</div>
+                                <div class="effect-box" data-value="typewriter">Type</div>
+                                <div class="effect-box" data-value="blurFade">Blur Fade</div>
+                                <div class="effect-box" data-value="spreadOut">Spread</div>
+                                <div class="effect-box" data-value="glitch">Glitch</div>
+                                <div class="effect-box" data-value="popIn">Pop In</div>
+                                <div class="effect-box" data-value="wipeReveal">Wipe</div>
+                                <div class="effect-box" data-value="kineticFlyIn">Kinetic</div>
+                                <div class="effect-box" data-value="slingshot">Slingshot</div>
+                                <div class="effect-box" data-value="cassetteFade">Cassette</div>
+                                <div class="effect-box" data-value="shatterIn">Shatter</div>
+                                <div class="effect-box" data-value="cinemaReveal">Cinema</div>
+                                <div class="effect-box" data-value="neonFlicker">Neon</div>
+                                <div class="effect-box" data-value="gravityDrop">Gravity</div>
+                                <div class="effect-box" data-value="interference">Interf.</div>
+                                <div class="effect-box" data-value="stampIn">Stamp</div>
+                            </div>
+                            <input type="hidden" id="effectSelect" value="">
+                            <div class="input-group">
+                                <label>Transition Duration</label>
+                                <input type="range" id="transitionSelect" min="0.1" max="2.0" step="0.1" value="0.5">
+                            </div>
+                        </div>
+                    </div>
+                    
+                </div>
+            </div>
+        </div>
+        
+        <div class="sidebar-footer">
+            <small>2026. Vibe coded by @mgdvp</small>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <header class="top-bar">
+            <div class="project-title" id="project-title">
+                <i class="fas fa-pen"></i> New Lyric Video Project 01
+            </div>
+            <div class="actions">
+                <span class="status-indicator"><span class="dot"></span> Saved</span>
+                <button id="recordBtn" class="btn-primary-gradient" disabled>
+                    <i class="fas fa-download"></i> Export Video
+                </button>
+            </div>
+        </header>
+
+        <div class="workspace">
+            <div class="canvas-wrapper" id="canvasWrapper">
+                <div class="resolution-badge" id="resolutionBadge">1920 x 1080</div>
+                <canvas id="videoCanvas" width="1920" height="1080"></canvas>
+            </div>
+        </div>
+
+        <footer class="bottom-bar">
+            <div class="timeline-track" id="timelineTrack">
+                <div class="timeline-progress" id="timelineProgress"></div>
+            </div>
+            
+            <div class="controls-row">
+                <div class="time-display"><span id="currentTime">00:00</span> / <span id="totalTime">00:00</span></div>
+                
+                <div class="playback-buttons">
+                    <button id="stopBtn" class="icon-btn" disabled><i class="fas fa-stop"></i></button>
+                    <button id="playBtn" class="play-circle-btn" disabled><i class="fas fa-play" id="playIcon"></i></button>
+                </div>
+                
+                <div class="volume-controls">
+                    <div class="status-text" id="statusText">Ready to start.</div>
+                    <button id="fullscreenBtn"><i class="fas fa-expand"></i></button>
+                </div>
+            </div>
+            
+        </footer>
+    </main>
+
+    <audio id="audioPlayer" crossorigin="anonymous"></audio>
+    <script src="script.js"></script>
+</body>
+</html>
