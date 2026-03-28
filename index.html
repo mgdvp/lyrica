@@ -39,6 +39,13 @@
                         </label>
                         <input type="file" id="lrcInput" accept=".lrc,.txt">
                     </div>
+                    <div class="input-group" style="margin-top: 15px;">
+                        <label style="display: flex; justify-content: space-between; align-items: center;">
+                            <span><i class="fas fa-stopwatch"></i> Sync Offset</span>
+                            <span id="offsetValueDisplay" style="color: #ff4081; font-weight: bold;">0.0s</span>
+                        </label>
+                        <input type="range" id="offsetInput" min="-5.0" max="5.0" step="0.1" value="0">
+                    </div>
 
                     <div class="upload-zone">
                         <label for="imageInput">
@@ -53,43 +60,7 @@
 
             <div class="panel">
                 <div class="panel-header">
-                    <span class="header-title"><i class="fas fa-crop-alt"></i> 2. Format</span>
-                    <i class="fas fa-chevron-up toggle-icon"></i>
-                </div>
-                <div class="panel-body">
-                    <div class="control-row">
-                        <div class="input-group" style="width: 55%;flex: unset;">
-                            <label>Resolution</label>
-                            <select id="resolutionSelect">
-                                <option value="720p">720p (HD)</option>
-                                <option value="1080p" selected>1080p (FHD)</option>
-                                <option value="1440p">1440p (QHD)</option>
-                                <option value="2160p">4K (UHD)</option>
-                            </select>
-                        </div>
-                        <div class="input-group">
-                            <label>FPS</label>
-                            <select id="fpsSelect">
-                                <option value="24">24 FPS</option>
-                                <option value="30" selected>30 FPS</option>
-                                <option value="60">60 FPS</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="input-group">
-                        <label>Quality (Bitrate)</label>
-                        <select id="bitrateSelect">
-                            <option value="2500" selected>Standard (2.5 Mbps)</option>
-                            <option value="5000">High (5 Mbps)</option>
-                            <option value="8000">Ultra (8 Mbps)</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            <div class="panel">
-                <div class="panel-header">
-                    <span class="header-title"><i class="fas fa-palette"></i> 3. Visual Style</span>
+                    <span class="header-title"><i class="fas fa-palette"></i> 2. Visual Style</span>
                     <i class="fas fa-chevron-up toggle-icon"></i>
                 </div>
                 <div class="panel-body">
@@ -208,6 +179,49 @@
                     </div>
                     
                 </div>
+                <div class="panel">
+                <div class="panel-header">
+                    <span class="header-title"><i class="fas fa-crop-alt"></i> 3. Format</span>
+                    <i class="fas fa-chevron-up toggle-icon"></i>
+                </div>
+                <div class="panel-body">
+                    <div class="control-row">
+                        <div class="input-group" style="width: 55%;flex: unset;">
+                            <label>Resolution</label>
+                            <select id="resolutionSelect">
+                                <option value="720p">720p (HD)</option>
+                                <option value="1080p" selected>1080p (FHD)</option>
+                                <option value="1440p">1440p (QHD)</option>
+                                <option value="2160p">4K (UHD)</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label>FPS</label>
+                            <select id="fpsSelect">
+                                <option value="24">24 FPS</option>
+                                <option value="30" selected>30 FPS</option>
+                                <option value="60">60 FPS</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label>Quality (Bitrate)</label>
+                        <select id="bitrateSelect">
+                            <option value="4000" selected>Standard (4 Mbps)</option>
+                            <option value="8000">High (8 Mbps)</option>
+                            <option value="16000">Ultra (16 Mbps)</option>
+                        </select>
+                    </div>
+                     <div class="input-group">
+                        <label>Codec</label>
+                        <select id="codecSelect">
+                            <option value="vp9" selected>VP9</option>
+                            <option value="h264">H.264 (compatibility)</option>
+                            <option value="av1">AV1 (high cpu usage)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
             </div>
         </div>
         

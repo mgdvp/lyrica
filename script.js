@@ -8,11 +8,13 @@ const inputs = {
     color: document.getElementById('colorInput'),
     fps: document.getElementById('fpsSelect'),
     bitrate: document.getElementById('bitrateSelect'),
+    codec: document.getElementById('codecSelect'),
     resolution: document.getElementById('resolutionSelect'),
     fontSize: document.getElementById('fontSizeInput'),
     nextLine: document.getElementById('nextLineToggle'),
     fontStyle: document.getElementById('fontStyleSelect'),
-    transitionLength: document.getElementById('transitionSelect')
+    transitionLength: document.getElementById('transitionSelect'),
+    offset: document.getElementById('offsetInput')
 };
 const canvas = document.getElementById('videoCanvas');
 const ctx = canvas.getContext('2d');
@@ -32,7 +34,7 @@ const buttons = {
 };
 const statusText = document.getElementById('statusText');
 
-// --- State ---
+// --- State & Cache (OPTIMIZED) ---
 let lyrics = [];
 let bgImage = null;
 let animationFrameId;
@@ -41,30 +43,109 @@ let mediaRecorder;
 let recordedChunks = [];
 let isRecording = false;
 
+// OPTİMİZASYON: Render döngüsündeki ağır yükleri (DOM okuma, text ölçümü, bg matematiği) önbelleğe aldık.
+const stateCache = {
+    bgParams: null,
+    fontSize: 64,
+    fontString: "",
+    activeLyricIndex: -1,
+    wrappedLines: [],
+    textWidth: 0, // Wipe ve Cinema efektleri için
+    settings: {
+        effect: 'fade',
+        color: '#ffffff',
+        fontFamily: 'Arial',
+        fontStyle: 'normal',
+        transitionLength: 0.5,
+        offset: 0,
+        nextLine: 'on'
+    }
+};
+
+function updateSettingsCache() {
+    stateCache.settings.effect = inputs.effect.value;
+    stateCache.settings.color = inputs.color.value;
+    stateCache.settings.fontFamily = inputs.font.value;
+    stateCache.settings.fontStyle = inputs.fontStyle.value;
+    stateCache.settings.transitionLength = parseFloat(inputs.transitionLength.value) || 0.5;
+    stateCache.settings.offset = parseFloat(inputs.offset.value) || 0;
+    stateCache.settings.nextLine = inputs.nextLine.value;
+    
+    updateResponsiveFontSize();
+    invalidateTextCache();
+}
+
+function updateResponsiveFontSize() {
+    const baseHeight = 1080;
+    const baseFontSize = parseInt(inputs.fontSize.value) || 64; 
+    stateCache.fontSize = Math.round((canvas.height / baseHeight) * baseFontSize);
+    stateCache.fontString = `${stateCache.settings.fontStyle} ${stateCache.fontSize}px ${stateCache.settings.fontFamily}`;
+}
+
+function invalidateTextCache() {
+    stateCache.activeLyricIndex = -1; // Bir sonraki frame'de metni tekrar ölçmeye zorlar
+}
+
+function calculateBgParams() {
+    if (!bgImage) return;
+    const imgRatio = bgImage.width / bgImage.height;
+    const canvasRatio = canvas.width / canvas.height;
+    let rw, rh, ox, oy;
+    if (imgRatio > canvasRatio) {
+        rh = canvas.height; rw = bgImage.width * (canvas.height/bgImage.height);
+        ox = (canvas.width - rw)/2; oy = 0;
+    } else {
+        rw = canvas.width; rh = bgImage.height * (canvas.width/bgImage.width);
+        ox = 0; oy = (canvas.height - rh)/2;
+    }
+    stateCache.bgParams = { rw, rh, ox, oy };
+}
+
 // --- Listeners ---
 inputs.music.addEventListener('change', handleMusicUpload);
 inputs.lrc.addEventListener('change', handleLrcUpload);
 inputs.image.addEventListener('change', handleImageUpload);
 
+inputs.offset.addEventListener('input', (e) => {
+    const val = parseFloat(e.target.value);
+    const displayEl = document.getElementById('offsetValueDisplay');
+    if(displayEl) displayEl.textContent = `${val > 0 ? '+' : ''}${val.toFixed(1)}s`;
+    updateSettingsCache();
+    if(!audioPlayer.paused) return;
+    drawFrame();
+});
+
 inputs.resolution.addEventListener('change', () => {
     if (!isRecording) applyResolution();
 });
 
-document.getElementById('fullscreenBtn').addEventListener('click', () => {
-    if (!document.fullscreenElement) {
-        document.getElementById('canvasWrapper').requestFullscreen();
-    } else {
-        document.exitFullscreen();
-    }
+inputs.fontSize.addEventListener('input', () => {
+    updateSettingsCache();
+    if(!audioPlayer.paused) return;
+    drawFrame();
 });
 
-// Redraw when settings change
-[inputs.font, inputs.effect, inputs.color, inputs.fontStyle, inputs.transitionLength].forEach(el => {
-    el.addEventListener('input', () => {
-        if(!audioPlayer.paused) return
-        drawFrame();
-        inputs.font.style.fontFamily = inputs.font.value;
+const fullscreenBtn = document.getElementById('fullscreenBtn');
+if (fullscreenBtn) {
+    fullscreenBtn.addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+            document.getElementById('canvasWrapper').requestFullscreen();
+        } else {
+            document.exitFullscreen();
+        }
     });
+}
+
+// Her ayar değiştiğinde önbelleği güncelle ve gerekiyorsa ekranı çiz
+[inputs.font, inputs.effect, inputs.color, inputs.fontStyle, inputs.transitionLength, inputs.nextLine].forEach(el => {
+    if (el) {
+        el.addEventListener('input', () => {
+            updateSettingsCache();
+            inputs.font.style.fontFamily = inputs.font.value;
+            if(!audioPlayer.paused) return;
+            drawFrame();
+        });
+    }
 });
 
 document.querySelectorAll('.effect-box').forEach(box => {
@@ -72,6 +153,7 @@ document.querySelectorAll('.effect-box').forEach(box => {
         document.querySelectorAll('.effect-box').forEach(b => b.classList.remove('active'));
         box.classList.add('active');
         inputs.effect.value = box.dataset.value;
+        updateSettingsCache();
         if (!audioPlayer.paused) return;
         drawFrame();
     });
@@ -80,6 +162,7 @@ document.querySelectorAll('.effect-box').forEach(box => {
 document.querySelectorAll('.swatch').forEach(swatch => {
     swatch.addEventListener('click', () => {
         inputs.color.value = swatch.dataset.color;
+        updateSettingsCache();
         if (!audioPlayer.paused) return;
         drawFrame();
     });
@@ -137,12 +220,17 @@ function handleMusicUpload(e) {
     const file = e.target.files[0];
     if (file) {
         const fileNameHandled = file.name.replace(/\.[^/.]+$/, "").slice(0, 50);
-        document.getElementById('project-title').textContent = fileNameHandled;
-        e.target.parentElement.querySelector('span').textContent = file.name;
+        const projectTitle = document.getElementById('project-title');
+        if(projectTitle) projectTitle.textContent = fileNameHandled;
+        
+        const span = e.target.parentElement.querySelector('span');
+        if(span) span.textContent = file.name;
+        
         audioPlayer.src = URL.createObjectURL(file);
         
         audioPlayer.onloadedmetadata = () => {
-             document.getElementById('totalTime').textContent = formatTime(audioPlayer.duration);
+             const totalTimeEl = document.getElementById('totalTime');
+             if(totalTimeEl) totalTimeEl.textContent = formatTime(audioPlayer.duration);
              checkReady();
         };
     }
@@ -151,9 +239,16 @@ function handleMusicUpload(e) {
 function handleImageUpload(e) {
     const file = e.target.files[0];
     if (file) {
-        e.target.parentElement.querySelector('span').textContent = file.name;
+        const span = e.target.parentElement.querySelector('span');
+        if(span) span.textContent = file.name;
+        
         const img = new Image();
-        img.onload = () => { bgImage = img; drawFrame(); checkReady(); };
+        img.onload = () => { 
+            bgImage = img; 
+            calculateBgParams(); 
+            drawFrame(); 
+            checkReady(); 
+        };
         img.src = URL.createObjectURL(file);
     }
 }
@@ -161,7 +256,9 @@ function handleImageUpload(e) {
 function handleLrcUpload(e) {
     const file = e.target.files[0];
     if (file) {
-        e.target.parentElement.querySelector('span').textContent = file.name;
+        const span = e.target.parentElement.querySelector('span');
+        if(span) span.textContent = file.name;
+        
         const reader = new FileReader();
         reader.onload = (event) => { parseLRC(event.target.result); checkReady(); };
         reader.readAsText(file);
@@ -183,6 +280,7 @@ function parseLRC(lrcText) {
     });
     lyrics.sort((a, b) => a.time - b.time);
     statusText.textContent = `Loaded ${lyrics.length} lines.`;
+    invalidateTextCache();
 }
 
 function applyResolution() {
@@ -196,7 +294,12 @@ function applyResolution() {
     const [w, h] = map[res];
     canvas.width = w;
     canvas.height = h;
-    document.getElementById('resolutionBadge').textContent = `${w} x ${h}`;
+    
+    const resBadge = document.getElementById('resolutionBadge');
+    if(resBadge) resBadge.textContent = `${w} x ${h}`;
+    
+    calculateBgParams();
+    updateSettingsCache(); // Ayrıca font boyutunu ve metin cache'ini sıfırlar
     drawFrame();
 }
 
@@ -204,12 +307,6 @@ function setControlsDisabled(state) {
     inputs.fps.disabled = state;
     inputs.bitrate.disabled = state;
     inputs.resolution.disabled = state;
-}
-
-function getResponsiveFontSize() {
-    const baseHeight = 1080;
-    const baseFontSize = parseInt(inputs.fontSize.value) || 64; 
-    return Math.round((canvas.height / baseHeight) * baseFontSize);
 }
 
 function formatTime(totalSecs) {
@@ -223,13 +320,13 @@ function checkReady() {
         buttons.play.disabled = false;
         buttons.record.disabled = false;
         statusText.textContent = "Ready.";
-        inputs.font.scrollIntoView({ behavior: 'smooth' });
-        // collapse assets panel
         document.querySelectorAll('.panel').forEach(panel => {
-            if (panel.querySelector('.header-title').textContent.includes("Assets")) {
+            const titleEl = panel.querySelector('.header-title');
+            if (titleEl && (titleEl.textContent.includes("Assets") || titleEl.textContent.includes("Format"))) {
                 panel.classList.add('collapsed');
             }
         });
+        updateSettingsCache();
         drawFrame();
     }
 }
@@ -244,62 +341,11 @@ function updateProgressBar() {
 
 // --- Rendering Engine ---
 
-function drawFrame() {
-    const fontsize = getResponsiveFontSize();
-    const smallFontSize = Math.round(fontsize * 0.5);
+ctx.imageSmoothingEnabled = true;
+ctx.imageSmoothingQuality = "high";
 
-    // 1. Clear & Background
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (bgImage) drawBackgroundCover();
-    
-    // Dimmer
-    ctx.fillStyle = "rgba(0,0,0,0.5)";
-    ctx.fillRect(0,0,canvas.width, canvas.height);
-
-    // 2. Determine Active Lyric
-    const currentTime = audioPlayer.currentTime;
-    document.getElementById('currentTime').textContent = formatTime(currentTime);
-    
-    // Update visual progress bar
-    updateProgressBar();
-
-    const currentIndex = lyrics.findIndex((line, i) => {
-        const nextTime = lyrics[i + 1] ? lyrics[i + 1].time : Infinity;
-        return currentTime >= line.time && currentTime < nextTime;
-    });
-
-    if (currentIndex !== -1) {
-        const line = lyrics[currentIndex];
-        const nextLine = lyrics[currentIndex + 1];
-        
-        // Use user-defined transition duration
-        const transitionDuration = parseFloat(inputs.transitionLength.value) || 0.5;
-        
-        // Calculate Animation Progress (0.0 to 1.0)
-        const timeActive = currentTime - line.time;
-        let progress = timeActive / transitionDuration;
-        if (progress > 1) progress = 1; // Clamp
-
-        // Draw Main Text with Effect
-        drawTextWithEffect(line.text, canvas.width/2, canvas.height/2, progress, true);
-        
-        // Draw Next Text (Static, small)
-        if (nextLine && inputs.nextLine.value === "on") {
-            ctx.save();
-            ctx.font = `${inputs.fontStyle.value} ${smallFontSize}px ${inputs.font.value}`;
-            ctx.fillStyle = "rgba(255,255,255,0.4)";
-            ctx.textAlign = "center";
-            ctx.fillText(nextLine.text, canvas.width/2, canvas.height/2 + fontsize * 1.75);
-            ctx.restore();
-        }
-    }
-
-    if (!audioPlayer.paused && !audioPlayer.ended) {
-        animationFrameId = requestAnimationFrame(drawFrame);
-    }
-}
-
-function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+// OPTİMİZASYON: Basitleştirilmiş, hızlı metin bölme fonksiyonu
+function wrapText(ctx, text, maxWidth) {
     const words = text.split(' ');
     let line = '';
     const lines = [];
@@ -316,31 +362,99 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
             line = testLine;
         }
     }
-
     lines.push(line);
     return lines;
 }
 
+function drawFrame() {
+    const fontsize = stateCache.fontSize;
+    const smallFontSize = Math.round(fontsize * 0.5);
+
+    // 1. Clear & Background
+    if (bgImage) {
+        drawBackgroundCover();
+    } else {
+        // OPTİMİZASYON: Sadece arkaplan resmi yoksa ClearRect çalışır
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    
+    // Dimmer
+    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    ctx.fillRect(0,0,canvas.width, canvas.height);
+
+    // 2. Determine Active Lyric
+    const currentTime = audioPlayer.currentTime;
+    const currentTimeEl = document.getElementById('currentTime');
+    if(currentTimeEl) currentTimeEl.textContent = formatTime(currentTime);
+    
+    updateProgressBar();
+
+    const offsetValue = stateCache.settings.offset;
+    const adjustedTime = currentTime - offsetValue;
+
+    const currentIndex = lyrics.findIndex((line, i) => {
+        const nextTime = lyrics[i + 1] ? lyrics[i + 1].time : Infinity;
+        return adjustedTime >= line.time && adjustedTime < nextTime;
+    });
+
+    if (currentIndex !== -1) {
+        const line = lyrics[currentIndex];
+        const nextLine = lyrics[currentIndex + 1];
+        
+        const transitionDuration = stateCache.settings.transitionLength;
+        
+        const timeActive = adjustedTime - line.time;
+        let progress = timeActive / transitionDuration;
+        if (progress > 1) progress = 1; // Clamp
+
+        // OPTİMİZASYON: Metin Kaydırma ve Ölçüm Önbelleği (Text Wrap Caching)
+        if (stateCache.activeLyricIndex !== currentIndex) {
+            stateCache.activeLyricIndex = currentIndex;
+            ctx.font = stateCache.fontString;
+            stateCache.wrappedLines = wrapText(ctx, line.text, canvas.width * 0.8);
+            
+            // Cinema ve WipeReveal efektleri için en geniş satırı hesapla
+            stateCache.textWidth = Math.max(
+                ...stateCache.wrappedLines.map(l => ctx.measureText(l).width),
+                ctx.measureText(line.text).width
+            );
+        }
+
+        // Draw Main Text with Effect
+        drawTextWithEffect(line.text, canvas.width/2, canvas.height/2, progress, true);
+        
+        // Draw Next Text (Static, small)
+        if (nextLine && stateCache.settings.nextLine === "on") {
+            ctx.save();
+            ctx.font = `${stateCache.settings.fontStyle} ${smallFontSize}px ${stateCache.settings.fontFamily}`;
+            ctx.fillStyle = "rgba(255,255,255,0.4)";
+            ctx.textAlign = "center";
+            ctx.fillText(nextLine.text, canvas.width/2, canvas.height/2 + fontsize * 1.75);
+            ctx.restore();
+        }
+    }
+
+    if (!audioPlayer.paused && !audioPlayer.ended) {
+        animationFrameId = requestAnimationFrame(drawFrame);
+    }
+}
 
 function drawTextWithEffect(text, x, y, progress, isMain) {
-    const fontSize = getResponsiveFontSize();
-    const fontStyle = inputs.fontStyle.value;
+    const fontSize = stateCache.fontSize;
     const lineHeight = fontSize * 1.2;
-    const maxWidth = canvas.width * 0.8; 
+    const effect = stateCache.settings.effect;
 
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = `${fontStyle} ${fontSize}px ${inputs.font.value}`;
-    ctx.fillStyle = inputs.color.value;
+    ctx.font = stateCache.fontString;
+    ctx.fillStyle = stateCache.settings.color;
 
     // Shadow
     ctx.shadowColor = "rgba(0,0,0,0.8)";
     ctx.shadowBlur = 10;
     ctx.shadowOffsetX = 3;
     ctx.shadowOffsetY = 3;
-
-    const effect = inputs.effect.value;
 
     // --- Effects ---
     if (effect === 'fade') {
@@ -358,6 +472,7 @@ function drawTextWithEffect(text, x, y, progress, isMain) {
         ctx.translate(-x, -y);
     }
     else if (effect === 'typewriter') {
+        // Typewriter metni manipüle ettiği için aşağıda özel bir işlem yapılacak
         const charCount = Math.floor(text.length * progress);
         text = text.substring(0, charCount);
     }
@@ -393,31 +508,21 @@ function drawTextWithEffect(text, x, y, progress, isMain) {
     else if (effect === 'wipeReveal') {
         ctx.save(); 
         ctx.beginPath();
-        const textWidth = ctx.measureText(text).width;
-        const textHeight = 100; 
+        const textWidth = stateCache.textWidth; // OPTİMİZASYON: Önceden hesaplanmış genişlik kullanılır
+        const textHeight = lineHeight * stateCache.wrappedLines.length + 20; 
         ctx.rect(x - textWidth/2, y - textHeight/2, textWidth * progress, textHeight);
         ctx.clip();
     }
     else if (effect === 'kineticFlyIn') {
-        // 1. Calculate a consistent "random" angle based on the text characters
         const seed = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-        const angle = (seed % 360) * (Math.PI / 180); // Convert degrees to radians
-        
-        // 2. Set the starting distance (how far away the words start)
-        // As progress goes from 0 to 1, distance goes from 300 to 0
+        const angle = (seed % 360) * (Math.PI / 180); 
         const distance = 300 * (1 - easeOutQuart(progress)); 
-        
-        // 3. Apply the offset to the current x and y
         x += Math.cos(angle) * distance;
         y += Math.sin(angle) * distance;
-        
-        // 4. Add a slight rotation that straightens out as it lands
-        const rotation = ( (seed % 20) - 10 ) * (1 - progress); // -10 to 10 degrees
+        const rotation = ( (seed % 20) - 10 ) * (1 - progress); 
         ctx.translate(x, y);
         ctx.rotate(rotation * Math.PI / 180);
         ctx.translate(-x, -y);
-
-        // 5. Fade in and scale slightly for "punch"
         ctx.globalAlpha = progress;
         const scale = 0.8 + (0.2 * progress);
         ctx.translate(x, y);
@@ -425,11 +530,10 @@ function drawTextWithEffect(text, x, y, progress, isMain) {
         ctx.translate(-x, -y);
     }
     else if (effect === 'slingshot') {
-        // Text overshoots past its target, snaps back like a rubber band
         ctx.globalAlpha = Math.min(1, progress * 2);
         const overshoot = progress < 0.6
-            ? -(1 - progress / 0.6) * 80          // flies in from left
-            : Math.sin((progress - 0.6) / 0.4 * Math.PI) * 20 * (1 - progress); // bounces
+            ? -(1 - progress / 0.6) * 80 
+            : Math.sin((progress - 0.6) / 0.4 * Math.PI) * 20 * (1 - progress); 
         x += overshoot;
         const squish = progress < 0.6 ? 1.3 - 0.3 * (progress / 0.6) : 1;
         ctx.translate(x, y);
@@ -437,7 +541,6 @@ function drawTextWithEffect(text, x, y, progress, isMain) {
         ctx.translate(-x, -y);
     }
     else if (effect === 'cassetteFade') {
-        // Text unspools from a narrow vertical line, expanding outward like tape
         ctx.globalAlpha = progress;
         const scaleX = easeOutBack(progress);
         const scaleY = 0.05 + 0.95 * easeOutQuad(progress);
@@ -446,7 +549,6 @@ function drawTextWithEffect(text, x, y, progress, isMain) {
         ctx.translate(-x, -y);
     }
     else if (effect === 'shatterIn') {
-        // Text assembles from multiple offset ghost copies converging on the target
         if (progress < 1) {
             const layers = 4;
             for (let i = 0; i < layers; i++) {
@@ -457,7 +559,10 @@ function drawTextWithEffect(text, x, y, progress, isMain) {
                 ctx.save();
                 ctx.globalAlpha = (layerProgress / layers) * 0.6;
                 ctx.translate(x + offsetX, y + offsetY);
-                ctx.fillText(text, 0, 0);
+                // Çarpma efekti için performanstan ödün vermemek adına basitleştirildi
+                stateCache.wrappedLines.forEach((line, j) => {
+                   ctx.fillText(line.trim(), 0, j * lineHeight);
+                });
                 ctx.restore();
             }
             ctx.globalAlpha = easeOutQuart(progress);
@@ -466,40 +571,34 @@ function drawTextWithEffect(text, x, y, progress, isMain) {
         }
     }
     else if (effect === 'cinemaReveal') {
-        // Two horizontal bars (like film letterbox) slide apart to reveal the text
         ctx.save();
         ctx.beginPath();
-        const textWidth = ctx.measureText(text).width;
-        const halfH = 60 * progress; // bars slide open
+        const textWidth = stateCache.textWidth; // OPTİMİZASYON
+        const halfH = 60 * progress; 
         ctx.rect(x - textWidth / 2 - 10, y - halfH, textWidth + 20, halfH * 2);
         ctx.clip();
         ctx.globalAlpha = progress;
     }
     else if (effect === 'neonFlicker') {
-        // Mimics a neon sign powering up — flickers before settling into full glow
         const flicker = progress < 0.7
-            ? Math.round(Math.sin(progress * 80)) * (progress / 0.7)  // rapid on/off
+            ? Math.round(Math.sin(progress * 80)) * (progress / 0.7) 
             : 1;
         ctx.globalAlpha = Math.max(0, flicker);
         if (progress > 0.5) {
-            // Build up glow intensity
             const glow = 15 * ((progress - 0.5) / 0.5);
             ctx.shadowBlur = glow;
             ctx.shadowColor = 'rgba(0, 200, 255, 0.9)';
         }
     }
     else if (effect === 'gravityDrop') {
-        // Text falls from above with realistic gravity
         const bounceProgress = easeOutBounce(progress);
         const startY = y - 200;
-        y = startY + (y - startY) * bounceProgress; // actually, displace from above:
         const dropY = -200 * (1 - bounceProgress);
         ctx.globalAlpha = Math.min(1, progress * 3);
         ctx.translate(x, y + dropY);
         ctx.translate(-x, -(y + dropY));
     }
     else if (effect === 'interference') {
-        // Horizontal scan-line distortion that stabilises into clean text (CRT/VHS feel)
         ctx.globalAlpha = progress;
         const instability = 1 - easeOutQuart(progress);
         const scanShift = Math.sin(progress * Math.PI * 12) * 15 * instability;
@@ -512,25 +611,30 @@ function drawTextWithEffect(text, x, y, progress, isMain) {
         }
     }
     else if (effect === 'stampIn') {
-        // Text slams down from enormous scale to normal like a rubber stamp
         ctx.globalAlpha = progress < 0.5 ? 0 : (progress - 0.5) * 2;
         const scale = progress < 0.7
-            ? 3 - (3 - 1) * easeOutQuart(progress / 0.7)   // 3x → 1x fast drop
-            : 1 + 0.05 * Math.sin((progress - 0.7) / 0.3 * Math.PI); // micro-bounce
+            ? 3 - (3 - 1) * easeOutQuart(progress / 0.7) 
+            : 1 + 0.05 * Math.sin((progress - 0.7) / 0.3 * Math.PI); 
         ctx.translate(x, y);
         ctx.scale(scale, scale);
         ctx.translate(-x, -y);
     }
 
-    // --- WORD WRAP ---
-    const lines = wrapText(ctx, text, x, y, maxWidth, lineHeight);
-    const startY = y - ((lines.length - 1) * lineHeight) / 2;
+    // --- WORD WRAP CİDDİ OPTİMİZASYON ---
+    let linesToDraw = stateCache.wrappedLines;
+    
+    // Sadece Typewriter metni dinamik olarak kestiği için anlık wrap hesaplaması gerekir
+    if (effect === 'typewriter') {
+        linesToDraw = wrapText(ctx, text, canvas.width * 0.8);
+    }
 
-    lines.forEach((line, i) => {
+    const startY = y - ((linesToDraw.length - 1) * lineHeight) / 2;
+
+    linesToDraw.forEach((line, i) => {
         ctx.fillText(line.trim(), x, startY + i * lineHeight);
     });
 
-    if (effect === 'wipeReveal') {
+    if (effect === 'wipeReveal' || effect === 'cinemaReveal') {
         ctx.restore();
     }
     
@@ -538,16 +642,10 @@ function drawTextWithEffect(text, x, y, progress, isMain) {
 }
 
 function drawBackgroundCover() {
-    const imgRatio = bgImage.width / bgImage.height;
-    const canvasRatio = canvas.width / canvas.height;
-    let rw, rh, ox, oy;
-    if (imgRatio > canvasRatio) {
-        rh = canvas.height; rw = bgImage.width * (canvas.height/bgImage.height);
-        ox = (canvas.width - rw)/2; oy = 0;
-    } else {
-        rw = canvas.width; rh = bgImage.height * (canvas.width/bgImage.width);
-        ox = 0; oy = (canvas.height - rh)/2;
-    }
+    if (!stateCache.bgParams) calculateBgParams();
+    if (!stateCache.bgParams) return;
+    
+    const { ox, oy, rw, rh } = stateCache.bgParams;
     ctx.drawImage(bgImage, ox, oy, rw, rh);
 }
 
@@ -571,7 +669,8 @@ function easeOutBounce(t) {
 }
 
 function updateTransitionValue(value) {
-    document.getElementById('transitionValue').textContent = `${value}s`;
+    const valEl = document.getElementById('transitionValue');
+    if(valEl) valEl.textContent = `${value}s`;
 }
 
 // --- Playback/Record Handlers ---
@@ -621,13 +720,16 @@ function toggleRecording() {
 function startRecording() {
     setControlsDisabled(true);
     setupAudioContext();
-    const canvasStream = canvas.captureStream(parseInt(inputs.fps.value));
+    const fps = parseInt(inputs.fps.value) || 60;
+    const canvasStream = canvas.captureStream(fps);
     const audioStream = dest.stream;
     const combinedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioStream.getAudioTracks()]);
 
     recordedChunks = [];
     try {
-        mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm; codecs=vp9', videoBitsPerSecond: parseInt(inputs.bitrate.value) * 1000 });
+        const bitrateStr = inputs.bitrate.value;
+        const bitsPerSec = parseInt(bitrateStr) * 1000;
+        mediaRecorder = new MediaRecorder(combinedStream, { mimeType: `video/webm; codecs=${inputs.codec.value}`, videoBitsPerSecond: bitsPerSec });
     } catch (e) {
         mediaRecorder = new MediaRecorder(combinedStream);
     }
@@ -646,7 +748,8 @@ function startRecording() {
     buttons.play.disabled = true;
     buttons.stop.disabled = true;
 
-    document.getElementById('sidebar').classList.add("locked");
+    const sidebar = document.getElementById('sidebar');
+    if(sidebar) sidebar.classList.add("locked");
 
     audioPlayer.onplay = () => {
         requestAnimationFrame(updateRecordingProgress);
@@ -676,7 +779,7 @@ function stopRecording() {
 }
 
 function exportVideo() {
-    const fileNameHandled = inputs.music.files[0].name.replace(/\.[^/.]+$/, "").slice(0, 50);
+    const fileNameHandled = inputs.music.files[0] ? inputs.music.files[0].name.replace(/\.[^/.]+$/, "").slice(0, 50) : 'video';
     statusText.textContent = "Processing...";
     const blob = new Blob(recordedChunks, { type: 'video/webm' });
     const url = URL.createObjectURL(blob);
@@ -690,11 +793,13 @@ function exportVideo() {
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
         statusText.textContent = "Download started!";
-        document.getElementById('sidebar').classList.remove("locked");
+        const sidebar = document.getElementById('sidebar');
+        if(sidebar) sidebar.classList.remove("locked");
     }, 100);
 }
 
 // Init Canvas
+updateSettingsCache();
 ctx.fillStyle = "#111";
 ctx.fillRect(0,0,canvas.width, canvas.height);
 ctx.fillStyle = "#444";
