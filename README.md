@@ -1,38 +1,34 @@
 # 🎵 Lyrica Studio
 
-Lyrica Studio is a powerful, modern, fully browser-based application designed to help you create stunning lyric videos effortlessly. With real-time canvas rendering, customizable text animations, and direct video exporting, producing your next music video has never been this simple.
+Fast, zero-server lyric video rendering directly in your browser. Drop your files, set the style, and export up to 4K 60FPS on the fly.
 
 ## ✨ Features
 
-- **📂 Asset Management**: Easily upload your audio tracks (`.mp3`, `.wav`), timed lyric files (`.lrc`, `.txt`), and custom background images directly into the browser.
-- **🎛️ Format Controls**: Choose your desired export quality. Supports multiple resolutions including 720p, 1080p, 1440p, and 4K (UHD). Adjust framerates (24, 30, 60 FPS) and flexible bitrates and codecs for optimal quality.
-- **🎨 Visual Styling**:
-  - Extensive built-in typography options curated for different vibes (Modern, Hip-Hop, Cinematic, Emotional).
-  - Modern color picker with quick swatches and a custom color tool.
-  - Granular control over font styles, sizing, and shadowing.
-  - Option to preview the "upcoming" lyric line.
-- **🎬 Advanced Transitions**: Over 15+ complex motion typography effects carefully built-in (e.g., Slingshot, Neon Flicker, Gravity Drop, Shatter In, Kinetic Fly In). Adjustable transition durations.
-- **⏱️ Interactive Timeline**: A highly responsive, visual playback timeline with drag-and-scrub support for precise previewing.
-- **💾 Direct Export**: Uses native browser APIs to map Canvas rendering and Web Audio directly to video, outputting a highly detailed `.webm` file straight to your local machine—no server required!
+* **No Servers, No Waiting:** Renders and exports directly to a high-quality `.webm` locally.
+* **Drag & Drop Assets:** Instantly load `.mp3`, `.wav`, `.lrc` files, and custom background images.
+* **Granular Visuals:** 15+ complex kinetic typography effects (e.g., Slingshot, Shatter In, Kinetic Fly In), custom font styling, and upcoming lyric previews.
+* **Pro-Grade Export:** Scale from 720p up to 4K (UHD) with adjustable framerates (24, 30, 60 FPS) and bitrates.
+* **Interactive Timeline:** Drag-and-scrub visual timeline for precise effect syncing.
 
-## 🚀 How to Use
+## 🚀 Quick Start
 
-1. **Open the App**: Simply open `index.html` in a modern web browser.
-2. **Upload Assets**: Navigate to the `1. Assets` panel on the left sidebar. Add your song, your generated `.lrc` file, set offset (optional) and an aesthetically pleasing background image.
-3. **Customize Render**: Tweak the `Format` and `Visual Style` panels to get your text animations and resolution looking perfect. Use the scrubber at the bottom to preview how effects trigger to the beat.
-4. **Hit Record**: Click the **Export Video** button at the top right. The app will play through your song in real-time, render the visuals on the fly, and download the finished video when complete.
+1.  **Open:** Run `index.html` in any modern browser.
+2.  **Load:** Upload your audio track, timed `.lrc` file, and a background image in the Assets panel.
+3.  **Style:** Dial in the vibe using the Format and Visual Style controls. Preview transitions on the timeline.
+4.  **Render:** Hit **Export Video**. The app renders visuals to the beat in real-time and downloads the final cut.
 
-## 🛠️ Technology Stack
+## 🛠️ Performance Engine
 
-- **HTML5 & CSS3**: Modern layouts using Flexbox and Grid, with vanilla CSS custom properties (variables) for consistent theming. 
-- **Vanilla JavaScript (ES6)**: Clean, module-free scripting for performance.
-- **HTML5 Canvas API**: Used as the primary rendering engine for dynamic text tracking and frame-by-frame visual effects plotting.
-- **Web Audio API**: Handles audio routing, extraction, and sync.
-- **MediaStream Recording API**: Captures the visual Canvas stream and the combined audio stream to encode video locally inside the browser.
+Built strictly with vanilla web APIs for a lightweight footprint and aggressive performance.
+
+* **Offscreen Canvas Caching:** Backgrounds are pre-scaled and dimmed on an offscreen buffer. This prevents the browser from recalculating image ratios 60 times per second, which is critical for 4K stability.
+* **O(1) Lyric Sync:** Rather than searching through the entire lyric array every frame, the engine uses a state-aware pointer that increments only when the timestamp is reached.
+* **Asset Pre-processing:** Text measurement and line wrapping are cached and only invalidated when the active lyric changes, saving massive CPU cycles.
+* **Native Encoding:** Uses the **MediaStream Recording API** to capture the raw visual canvas stream and audio context for hardware-accelerated encoding.
 
 ## 📝 License
 
-Designed and coded with a focus on ease-of-use and the ultimate developer vibe. 
+Built for performance. Coded for the culture.
 
 ---
 *Created playfully for the next generation of visual audio content!*

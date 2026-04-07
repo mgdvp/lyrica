@@ -37,20 +37,24 @@ const statusText = document.getElementById('statusText');
 // --- State & Cache (OPTIMIZED) ---
 let lyrics = [];
 let bgImage = null;
+let cachedBgCanvas = document.createElement('canvas'); // Offscreen canvas for background
+let cachedBgCtx = cachedBgCanvas.getContext('2d', { alpha: false }); // Optimize for no transparency
 let animationFrameId;
 let audioContext, audioSource, dest;
 let mediaRecorder;
 let recordedChunks = [];
 let isRecording = false;
 
-// OPTİMİZASYON: Render döngüsündeki ağır yükleri (DOM okuma, text ölçümü, bg matematiği) önbelleğe aldık.
+// O(1) Lookup variable
+let currentLyricIndex = -1;
+
 const stateCache = {
     bgParams: null,
     fontSize: 64,
     fontString: "",
     activeLyricIndex: -1,
     wrappedLines: [],
-    textWidth: 0, // Wipe ve Cinema efektleri için
+    textWidth: 0,
     settings: {
         effect: 'fade',
         color: '#ffffff',
@@ -83,14 +87,21 @@ function updateResponsiveFontSize() {
 }
 
 function invalidateTextCache() {
-    stateCache.activeLyricIndex = -1; // Bir sonraki frame'de metni tekrar ölçmeye zorlar
+    stateCache.activeLyricIndex = -1;
 }
 
+// OPTIMIZATION: Pre-scale and cache the background onto an offscreen canvas
 function calculateBgParams() {
     if (!bgImage) return;
+    
+    // Resize the cached canvas to match the main canvas resolution
+    cachedBgCanvas.width = canvas.width;
+    cachedBgCanvas.height = canvas.height;
+
     const imgRatio = bgImage.width / bgImage.height;
     const canvasRatio = canvas.width / canvas.height;
     let rw, rh, ox, oy;
+    
     if (imgRatio > canvasRatio) {
         rh = canvas.height; rw = bgImage.width * (canvas.height/bgImage.height);
         ox = (canvas.width - rw)/2; oy = 0;
@@ -98,7 +109,17 @@ function calculateBgParams() {
         rw = canvas.width; rh = bgImage.height * (canvas.width/bgImage.width);
         ox = 0; oy = (canvas.height - rh)/2;
     }
-    stateCache.bgParams = { rw, rh, ox, oy };
+    
+    // Draw and scale the image onto the offscreen canvas ONCE
+    cachedBgCtx.imageSmoothingEnabled = true;
+    cachedBgCtx.imageSmoothingQuality = "high";
+    cachedBgCtx.drawImage(bgImage, ox, oy, rw, rh);
+    
+    // Add the dimmer layer directly to the cached background
+    cachedBgCtx.fillStyle = "rgba(0,0,0,0.5)";
+    cachedBgCtx.fillRect(0, 0, cachedBgCanvas.width, cachedBgCanvas.height);
+
+    stateCache.bgParams = true; // Flag that it's ready
 }
 
 // --- Listeners ---
@@ -111,6 +132,8 @@ inputs.offset.addEventListener('input', (e) => {
     const displayEl = document.getElementById('offsetValueDisplay');
     if(displayEl) displayEl.textContent = `${val > 0 ? '+' : ''}${val.toFixed(1)}s`;
     updateSettingsCache();
+    // Reset O(1) lookup on scrub
+    currentLyricIndex = -1;
     if(!audioPlayer.paused) return;
     drawFrame();
 });
@@ -136,7 +159,6 @@ if (fullscreenBtn) {
     });
 }
 
-// Her ayar değiştiğinde önbelleği güncelle ve gerekiyorsa ekranı çiz
 [inputs.font, inputs.effect, inputs.color, inputs.fontStyle, inputs.transitionLength, inputs.nextLine].forEach(el => {
     if (el) {
         el.addEventListener('input', () => {
@@ -177,7 +199,6 @@ audioPlayer.addEventListener('ended', () => {
     stopPlayback();
 });
 
-// Panel Collapse Logic
 document.querySelectorAll('.panel-header').forEach(header => {
     header.addEventListener('click', () => {
         const panel = header.parentElement;
@@ -185,7 +206,6 @@ document.querySelectorAll('.panel-header').forEach(header => {
     });
 });
 
-// Interactive Progress Bar (Seek & Scrub)
 let isScrubbing = false;
 
 function seekAudio(e) {
@@ -193,10 +213,14 @@ function seekAudio(e) {
     
     const rect = timelineTrack.getBoundingClientRect();
     let clickX = e.clientX - rect.left;
-    clickX = Math.max(0, Math.min(clickX, rect.width)); // clamp
+    clickX = Math.max(0, Math.min(clickX, rect.width));
     const percentage = clickX / rect.width;
     
     audioPlayer.currentTime = percentage * audioPlayer.duration;
+    
+    // Reset O(1) lookup on scrub
+    currentLyricIndex = -1;
+    
     updateProgressBar();
     if (audioPlayer.paused) drawFrame();
 }
@@ -279,6 +303,7 @@ function parseLRC(lrcText) {
         }
     });
     lyrics.sort((a, b) => a.time - b.time);
+    currentLyricIndex = -1; // Reset lookup
     statusText.textContent = `Loaded ${lyrics.length} lines.`;
     invalidateTextCache();
 }
@@ -299,7 +324,7 @@ function applyResolution() {
     if(resBadge) resBadge.textContent = `${w} x ${h}`;
     
     calculateBgParams();
-    updateSettingsCache(); // Ayrıca font boyutunu ve metin cache'ini sıfırlar
+    updateSettingsCache();
     drawFrame();
 }
 
@@ -344,7 +369,6 @@ function updateProgressBar() {
 ctx.imageSmoothingEnabled = true;
 ctx.imageSmoothingQuality = "high";
 
-// OPTİMİZASYON: Basitleştirilmiş, hızlı metin bölme fonksiyonu
 function wrapText(ctx, text, maxWidth) {
     const words = text.split(' ');
     let line = '';
@@ -366,21 +390,45 @@ function wrapText(ctx, text, maxWidth) {
     return lines;
 }
 
+// OPTIMIZATION: Resolve active lyric in O(1) time instead of O(N)
+function getActiveLyricIndex(adjustedTime) {
+    if (lyrics.length === 0) return -1;
+    
+    // If scrubbing backward, reset the index to force a resync
+    if (currentLyricIndex > 0 && adjustedTime < lyrics[currentLyricIndex].time) {
+        currentLyricIndex = -1;
+    }
+    
+    // Find the current index based on the pointer
+    if (currentLyricIndex === -1) {
+        // Fallback for initial load or scrub
+        currentLyricIndex = lyrics.findIndex((line, i) => {
+            const nextTime = lyrics[i + 1] ? lyrics[i + 1].time : Infinity;
+            return adjustedTime >= line.time && adjustedTime < nextTime;
+        });
+    } else {
+        // O(1) forward check
+        while (currentLyricIndex < lyrics.length - 1 && adjustedTime >= lyrics[currentLyricIndex + 1].time) {
+            currentLyricIndex++;
+        }
+    }
+    
+    return currentLyricIndex;
+}
+
+
 function drawFrame() {
     const fontsize = stateCache.fontSize;
     const smallFontSize = Math.round(fontsize * 0.5);
 
     // 1. Clear & Background
-    if (bgImage) {
-        drawBackgroundCover();
+    if (bgImage && stateCache.bgParams) {
+        // OPTIMIZATION: Draw the pre-scaled, pre-dimmed offscreen canvas
+        ctx.drawImage(cachedBgCanvas, 0, 0);
     } else {
-        // OPTİMİZASYON: Sadece arkaplan resmi yoksa ClearRect çalışır
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "rgba(0,0,0,1)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
-    
-    // Dimmer
-    ctx.fillStyle = "rgba(0,0,0,0.5)";
-    ctx.fillRect(0,0,canvas.width, canvas.height);
 
     // 2. Determine Active Lyric
     const currentTime = audioPlayer.currentTime;
@@ -392,28 +440,25 @@ function drawFrame() {
     const offsetValue = stateCache.settings.offset;
     const adjustedTime = currentTime - offsetValue;
 
-    const currentIndex = lyrics.findIndex((line, i) => {
-        const nextTime = lyrics[i + 1] ? lyrics[i + 1].time : Infinity;
-        return adjustedTime >= line.time && adjustedTime < nextTime;
-    });
+    // Call optimized O(1) lookup
+    const activeIndex = getActiveLyricIndex(adjustedTime);
 
-    if (currentIndex !== -1) {
-        const line = lyrics[currentIndex];
-        const nextLine = lyrics[currentIndex + 1];
+    if (activeIndex !== -1 && lyrics[activeIndex]) {
+        const line = lyrics[activeIndex];
+        const nextLine = lyrics[activeIndex + 1];
         
         const transitionDuration = stateCache.settings.transitionLength;
         
         const timeActive = adjustedTime - line.time;
-        let progress = timeActive / transitionDuration;
-        if (progress > 1) progress = 1; // Clamp
+        // Handle edge case where timeActive could be negative if offset causes issues early on
+        let progress = Math.max(0, timeActive / transitionDuration);
+        if (progress > 1) progress = 1;
 
-        // OPTİMİZASYON: Metin Kaydırma ve Ölçüm Önbelleği (Text Wrap Caching)
-        if (stateCache.activeLyricIndex !== currentIndex) {
-            stateCache.activeLyricIndex = currentIndex;
+        if (stateCache.activeLyricIndex !== activeIndex) {
+            stateCache.activeLyricIndex = activeIndex;
             ctx.font = stateCache.fontString;
             stateCache.wrappedLines = wrapText(ctx, line.text, canvas.width * 0.8);
             
-            // Cinema ve WipeReveal efektleri için en geniş satırı hesapla
             stateCache.textWidth = Math.max(
                 ...stateCache.wrappedLines.map(l => ctx.measureText(l).width),
                 ctx.measureText(line.text).width
@@ -423,12 +468,14 @@ function drawFrame() {
         // Draw Main Text with Effect
         drawTextWithEffect(line.text, canvas.width/2, canvas.height/2, progress, true);
         
-        // Draw Next Text (Static, small)
+        // Draw Next Text
         if (nextLine && stateCache.settings.nextLine === "on") {
             ctx.save();
             ctx.font = `${stateCache.settings.fontStyle} ${smallFontSize}px ${stateCache.settings.fontFamily}`;
             ctx.fillStyle = "rgba(255,255,255,0.4)";
             ctx.textAlign = "center";
+            // Shadow logic shouldn't bleed into next text, so explicitly clear it or state properties
+            ctx.shadowColor = "transparent"; 
             ctx.fillText(nextLine.text, canvas.width/2, canvas.height/2 + fontsize * 1.75);
             ctx.restore();
         }
@@ -450,13 +497,12 @@ function drawTextWithEffect(text, x, y, progress, isMain) {
     ctx.font = stateCache.fontString;
     ctx.fillStyle = stateCache.settings.color;
 
-    // Shadow
     ctx.shadowColor = "rgba(0,0,0,0.8)";
     ctx.shadowBlur = 10;
     ctx.shadowOffsetX = 3;
     ctx.shadowOffsetY = 3;
 
-    // --- Effects ---
+    // --- Effects (Maintained as-is) ---
     if (effect === 'fade') {
         ctx.globalAlpha = progress;
     } 
@@ -472,7 +518,6 @@ function drawTextWithEffect(text, x, y, progress, isMain) {
         ctx.translate(-x, -y);
     }
     else if (effect === 'typewriter') {
-        // Typewriter metni manipüle ettiği için aşağıda özel bir işlem yapılacak
         const charCount = Math.floor(text.length * progress);
         text = text.substring(0, charCount);
     }
@@ -508,7 +553,7 @@ function drawTextWithEffect(text, x, y, progress, isMain) {
     else if (effect === 'wipeReveal') {
         ctx.save(); 
         ctx.beginPath();
-        const textWidth = stateCache.textWidth; // OPTİMİZASYON: Önceden hesaplanmış genişlik kullanılır
+        const textWidth = stateCache.textWidth;
         const textHeight = lineHeight * stateCache.wrappedLines.length + 20; 
         ctx.rect(x - textWidth/2, y - textHeight/2, textWidth * progress, textHeight);
         ctx.clip();
@@ -559,7 +604,6 @@ function drawTextWithEffect(text, x, y, progress, isMain) {
                 ctx.save();
                 ctx.globalAlpha = (layerProgress / layers) * 0.6;
                 ctx.translate(x + offsetX, y + offsetY);
-                // Çarpma efekti için performanstan ödün vermemek adına basitleştirildi
                 stateCache.wrappedLines.forEach((line, j) => {
                    ctx.fillText(line.trim(), 0, j * lineHeight);
                 });
@@ -573,7 +617,7 @@ function drawTextWithEffect(text, x, y, progress, isMain) {
     else if (effect === 'cinemaReveal') {
         ctx.save();
         ctx.beginPath();
-        const textWidth = stateCache.textWidth; // OPTİMİZASYON
+        const textWidth = stateCache.textWidth;
         const halfH = 60 * progress; 
         ctx.rect(x - textWidth / 2 - 10, y - halfH, textWidth + 20, halfH * 2);
         ctx.clip();
@@ -620,10 +664,8 @@ function drawTextWithEffect(text, x, y, progress, isMain) {
         ctx.translate(-x, -y);
     }
 
-    // --- WORD WRAP CİDDİ OPTİMİZASYON ---
     let linesToDraw = stateCache.wrappedLines;
     
-    // Sadece Typewriter metni dinamik olarak kestiği için anlık wrap hesaplaması gerekir
     if (effect === 'typewriter') {
         linesToDraw = wrapText(ctx, text, canvas.width * 0.8);
     }
@@ -641,13 +683,7 @@ function drawTextWithEffect(text, x, y, progress, isMain) {
     ctx.restore();
 }
 
-function drawBackgroundCover() {
-    if (!stateCache.bgParams) calculateBgParams();
-    if (!stateCache.bgParams) return;
-    
-    const { ox, oy, rw, rh } = stateCache.bgParams;
-    ctx.drawImage(bgImage, ox, oy, rw, rh);
-}
+// Function removed: drawBackgroundCover() is no longer needed since we handle it in calculateBgParams and drawFrame
 
 // --- Easing Functions ---
 function easeOutQuad(t) { return t * (2 - t); }
@@ -690,6 +726,7 @@ function togglePlay() {
 function stopPlayback() {
     audioPlayer.pause();
     audioPlayer.currentTime = 0;
+    currentLyricIndex = -1; // Reset lookup on stop
     cancelAnimationFrame(animationFrameId);
     updateProgressBar();
     drawFrame();
@@ -739,6 +776,7 @@ function startRecording() {
 
     mediaRecorder.start();
     audioPlayer.currentTime = 0;
+    currentLyricIndex = -1; // Reset lookup on record start
     audioPlayer.play();
     drawFrame();
 
